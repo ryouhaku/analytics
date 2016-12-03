@@ -1,0 +1,306 @@
+<!-- StyleSheet -->
+<link rel="stylesheet" href="https://ssl.gstatic.com/docs/script/css/add-ons.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/pivottable/1.4.0/pivot.min.css">
+
+<style>
+    form {
+        margin: 8px;
+    }
+    select {
+        height: 38px;
+    }
+    select#file-select {
+        width: 300px;
+    }
+    select#sheet-select {
+        width: 100px;
+    }
+    input#query {
+        width: 500px;
+    }
+    td, th {
+        padding: 5px 10px;
+    }
+    .slide_toggle h3 {
+        cursor: pointer;
+        border-bottom: 1px solid black ;
+    }
+    .slide_toggle h3:before {
+        content: '';
+        position: relative;
+        float: left;
+        border-top: 10px solid black;
+        border-left: 5px solid transparent;
+        border-right: 5px solid transparent;
+        width: 0;
+        height: 0;
+        top: 5px;
+        right: 5px;
+    }
+    .slide_toggle h3.open::before {
+        content: '';
+        position: relative;
+        float: left;
+        border-left: 10px solid black;
+        border-top: 5px solid transparent;
+        border-bottom: 5px solid transparent;;
+        width: 0;
+        height: 0;
+        top: 5px;
+        right: 5px;
+    }
+</style>
+
+<!-- Body -->
+<form>
+  <div class="inline form-group">
+      <label for="file-select">File</label>
+      <select id="file-select" disabled onchange="$('#query').val(''); updateSheets()">
+          <option disabled selected>Loading...</option>
+      </select>
+  </div>
+  <div class="inline form-group">
+      <label for="sheet-select">Sheet</label>
+      <select id="sheet-select" disabled onchange="$('#query').val(''); updateData()">
+          <option disabled selected>Loading...</option>
+      </select>
+  </div>
+</form>
+
+<form onsubmit="updateData(); return false;">
+    <div class="inline form-group">
+        <label for="query">Query</label> 
+        <input id="query" type="text" disabled >
+    </div>
+    <div class="inline form-group">
+        <input id="query-submit" type="submit" disabled >
+    </div>
+</form>
+<div class="query-examples">
+Query Examples
+  <ul>
+    <li>SELECT * LIMIT 10</li>
+    <li>SELECT B, AVG(D) GROUP BY B PIVOT E</li>
+  </ul>
+</div>
+
+<div class="slide_toggle">
+    <h3>Columns</h3>
+    <table id="columns"></table>
+</div>
+
+<div class="slide_toggle">
+    <h3>Table</h3>
+    <div class="block" id="table"></div>    
+</div>
+
+<div class="slide_toggle">
+    <h3>Chart</h3>
+    <div class="inline form-group">
+        <label for="chart-type-select">Chart Type</label>
+        <select id="chart-type-select" onchange="updateChart()">
+            <option selected>ColumnChart</option>
+            <option>ColumnChart(stacked)</option>
+            <option>ColumnChart(percent)</option>
+            <option>BarChart</option>
+            <option>Histogram</option>
+            <option>LineChart</option>
+            <option>AreaChart</option>
+            <option>AreaChart(stacked)</option>
+            <option>ScatterChart</option>
+            <option>BubbleChart</option>
+            <option>PieChart</option>
+            <option>CandlestickChart</option>
+            <option>Sankey</option>
+            <option>TreeMap</option>
+            <option>Gauge</option>
+            <option>Calendar</option>
+        </select>
+    </div>
+
+    <div id="chart" style="width: 600px; height:400px" ></div>
+    <div id="png"></div>
+
+    <!-- Script -->
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+    <script src="//ajax.googleapis.com/ajax/libs/jqueryui/1.9.1/jquery-ui.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pivottable/1.4.0/pivot.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pivottable/1.4.0/gchart_renderers.min.js"></script>
+    <script>
+        var data;
+
+        google.load('visualization', '1.1', {packages:['corechart', 'charteditor', 'treemap', 'sankey', 'calendar']});
+        $(function() {
+            google.script.run
+            .withSuccessHandler(function(files) {
+                var fileSelect = $('#file-select');
+                fileSelect.children().remove();
+                fileSelect.append(
+                    '<option disabled selected>Choose File</option>'
+                    );
+                for (var i = 0; i < files.length; i++) {
+                    fileSelect.append(
+                        '<option value="' + files[i].id + '">' + files[i].path + '</option>');
+                }
+                fileSelect.prop('disabled', false);
+            })
+            .getSpreadSheetFiles(null, null);
+
+            $('.slide_toggle h3').on('click', function() {
+                $(this).toggleClass('open').next().slideToggle();
+            });
+        });
+
+        function updateSheets() {
+            var fileId = $('#file-select').val();
+            var sheetSelect = $('#sheet-select');
+            sheetSelect.prop('disabled', true);
+            sheetSelect.children().remove();
+            sheetSelect.append('<option disabled selected>Loading...</option>');
+            $('#query').prop('disabled', true);
+            $('#query-submit').prop('disabled', true);
+
+            google.script.run
+                .withSuccessHandler(function(sheets) {
+                    var sheetSelect = $('#sheet-select');
+                    sheetSelect.children().remove();
+                    sheetSelect.append(
+                        '<option disabled selected>Choose Sheet</option>'
+                        );
+                    for (var i = 0; i < sheets.length; i++) {
+                        sheetSelect.append('<option>' + sheets[i] + '</option>');
+                    }
+                    sheetSelect.prop('disabled', false);
+                })
+            .getSheets(fileId);
+        }
+
+        function updateData() {                                                        
+            var fileId = $('#file-select').val();                                      
+            var sheetName = $('#sheet-select').val();
+            var query = $('#query').val();
+
+            $('#query').prop('disabled', true);
+            $('#query-submit').prop('disabled', true);
+
+            if (fileId == null || sheetName == null) {
+                return
+            }
+            google.script.run                                                          
+                .withSuccessHandler(function(spreadsheet_url) {
+
+                    var url = spreadsheet_url + "?sheet=" + sheetName;
+                    var vq = new google.visualization.Query(url);
+                    if(query) {
+                        vq.setQuery(query);
+                    }
+                    vq.send(handleQueryResponse);
+                    $('#query').prop('disabled', false);
+                    $('#query-submit').prop('disabled', false);
+                })
+            .getUrl(fileId);
+        }
+
+        function updateColumnTable() {
+            if(!$('#query').val()) {
+                var columnsTable = $('#columns');
+                columnsTable.children().remove();
+                columnsTable
+                    .append($('<thead><tr>')
+                            .append('<th>Id</th>')
+                            .append('<th>Label</th>')
+                            .append('<th>Type</th>')
+                           );
+                var tbody = columnsTable.append('<tbody>');
+                for (var ci = 0; ci < data.getNumberOfColumns(); ci++) {
+                    tbody
+                        .append($('<tr>')
+                                .append('<td>' + data.getColumnId(ci) + '</td>')
+                                .append('<td>' + data.getColumnLabel(ci) + '</td>')
+                                .append('<td>' + data.getColumnType(ci) + '</td>')
+                               );
+                }
+            }
+        }
+
+        function updateTable() {   
+            var table =  new google.visualization.Table(document.getElementById('table'));
+            table.draw(data);
+        }
+
+        function updateChart() {
+            var chart;
+            var options;
+            switch($('#chart-type-select').val()){
+                case 'ColumnChart' :
+                    chart =  new google.visualization.ColumnChart(document.getElementById('chart'));
+                    break;
+                case 'ColumnChart(stacked)' :
+                    chart =  new google.visualization.ColumnChart(document.getElementById('chart'));
+                    options = {isStacked: true};
+                    break;
+                case 'ColumnChart(percent)' :
+                    chart =  new google.visualization.ColumnChart(document.getElementById('chart'));
+                    options = {isStacked: 'percent'};
+                    break;
+                case 'BarChart' :
+                    chart =  new google.visualization.BarChart(document.getElementById('chart'));
+                    break;
+                case 'Histogram' :
+                    chart =  new google.visualization.Histogram(document.getElementById('chart'));
+                    break;
+                case 'LineChart' :
+                    chart =  new google.visualization.LineChart(document.getElementById('chart'));
+                    break;
+                case 'AreaChart' :
+                    chart =  new google.visualization.AreaChart(document.getElementById('chart'));
+                    break;
+                case 'AreaChart(stacked)' :
+                    chart =  new google.visualization.AreaChart(document.getElementById('chart'));
+                    options = {isStacked: true};
+                    break;
+                case 'ScatterChart' :
+                    chart =  new google.visualization.ScatterChart(document.getElementById('chart'));
+                    break;
+                case 'BubbleChart' :
+                    chart =  new google.visualization.BubbleChart(document.getElementById('chart'));
+                    break;
+                case 'PieChart' :
+                    chart =  new google.visualization.PieChart(document.getElementById('chart'));
+                    break;
+                case 'CandlestickChart' :
+                    chart =  new google.visualization.CandlestickChart(document.getElementById('chart'));
+                    break;
+                case 'Sankey' :
+                    chart =  new google.visualization.Sankey(document.getElementById('chart'));
+                    break;
+                case 'TreeMap' :
+                    chart =  new google.visualization.TreeMap(document.getElementById('chart'));
+                    break;
+                case 'Gauge' :
+                    chart =  new google.visualization.Gauge(document.getElementById('chart'));
+                    break;
+                case 'Calendar' :
+                    chart =  new google.visualization.Calendar(document.getElementById('chart'));
+                    break;
+            }
+            chart.draw(data, options);
+
+            $('#png').html('');
+            if(chart.getImageURI()) {
+                $('#png').html('<a target="_blank" href="' + chart.getImageURI() + '">Download chart image</a>');
+            }
+        }
+
+        function handleQueryResponse(response) {
+            if (response.isError()) {
+                alert('Error in query: ' + response.getMessage() + ' ' + response.getDetailedMessage());
+                return;
+            }
+            data = response.getDataTable();
+
+            updateColumnTable();
+            updateTable();
+            updateChart();
+        }
+</script>
